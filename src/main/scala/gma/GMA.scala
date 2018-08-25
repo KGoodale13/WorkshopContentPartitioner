@@ -32,7 +32,6 @@ object GMA {
 		implicit val gmaBufferedWriter: BufferedOutputStream = new BufferedOutputStream(new FileOutputStream(newGMA))
 
 		try {
-			// The Header
 			writeHeader(title, description)
 			writeFileList(files)
 			writeFileContents(files)
@@ -50,19 +49,19 @@ object GMA {
 		outputBuffer.write(ADDON_IDENT.getBytes)
 		outputBuffer.write(ADDON_VERSION.toChar)
 		// SteamId (unused)
-		outputBuffer.write(0)
+		outputBuffer.write(FileUtil.paddedEndianInt(0, 8))
 		// Timestamp
-		outputBuffer.write(BigInt(System.currentTimeMillis / 1000).toByteArray)
+		outputBuffer.write(FileUtil.paddedEndianInt(System.currentTimeMillis / 1000, 8))
 		// Required content (unused)
 		outputBuffer.write(0.toChar)
 		// Addon Title
-		outputBuffer.write(title.getBytes)
+		outputBuffer.write(FileUtil.strToNullTerminatedByteArray(title))
 		// Addon description as json
-		outputBuffer.write(description.toString.getBytes)
+		outputBuffer.write(FileUtil.strToNullTerminatedByteArray(description.toString))
 		// Addon Author [unused]
-		outputBuffer.write("Author Name".getBytes)
+		outputBuffer.write(FileUtil.strToNullTerminatedByteArray("Author Name"))
 		// Addon Version [unused]
-		outputBuffer.write(1)
+		outputBuffer.write(FileUtil.paddedEndianInt(1, 4))
 	}
 
 	// Writes our file list and other associated metadata to the gma file
@@ -73,13 +72,13 @@ object GMA {
 			fileNum += 1
 			val crc = new FileInputStream(file).crc32
 			val fileSize = file.length()
-			outputBuffer.write(fileNum)
-			outputBuffer.write(FileUtil.relativizeToAssetPath(file).toLowerCase.getBytes)
-			outputBuffer.write(BigInt(fileSize).toByteArray)
-			outputBuffer.write(crc.bytes)
+			outputBuffer.write(FileUtil.paddedEndianInt(fileNum, 4))
+			outputBuffer.write(FileUtil.strToNullTerminatedByteArray(FileUtil.relativizeToAssetPath(file).toLowerCase))
+			outputBuffer.write(FileUtil.paddedEndianInt(fileSize, 8))
+			outputBuffer.write(crc.bytes.reverse.padTo(4, 0.toByte))
 		}
 		// Zero to signify end of file list
-		outputBuffer.write(0)
+		outputBuffer.write(FileUtil.paddedEndianInt(0, 4))
 	}
 
 	// Writes the actual content of each file to the gma file

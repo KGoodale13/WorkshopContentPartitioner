@@ -33,9 +33,13 @@ object FileUtil {
 		val crc = new FileInputStream(file).crc32.bytes
 		val fileOutputStream = new FileOutputStream(file, true)
 		try
-			fileOutputStream.write(crc)
+			fileOutputStream.write(crc.reverse.padTo(4, 0.toByte))
 		finally
 			fileOutputStream.close()
 	}
+
+	def strToNullTerminatedByteArray(string: String) = (string + "\0").getBytes
+
+	def paddedEndianInt(number: Long, padSize: Int) = BigInt(number).toByteArray.padTo(padSize, 0.toByte)
 
 }
