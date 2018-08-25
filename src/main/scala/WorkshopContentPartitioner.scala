@@ -4,7 +4,7 @@
 
 import java.io.File
 
-import gma.Description
+import gma.{Description, GMA}
 import persistence.ManifestEntry
 import persistence.Manifest
 import util.FileUtil
@@ -14,6 +14,7 @@ import scala.annotation.tailrec
 object WorkshopContentPartitioner extends App {
 
   val addonTextDescription = System.getenv("ADDON_DESCRIPTION")
+  val addonTitlePrefix = System.getenv("ADDON_TITLE_PREFIX").trim()
 
   val manifestFile = new File(s"${FileUtil.ASSET_FOLDER.getAbsolutePath}/.manifest")
 
@@ -29,14 +30,14 @@ object WorkshopContentPartitioner extends App {
   // Source: https://stackoverflow.com/a/7264833/5404965
   def getFileTreeStream(f: File): Stream[File] =
     f #::
-      (if (f.isDirectory && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName)))
+      (if (f.isDirectory && !f.isHidden && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName)))
         f.listFiles().toStream.flatMap(getFileTreeStream)
-      else Stream.empty)
+      else Stream.empty).filter(file => !file.isHidden && file.isFile)
 
   val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER)
 
   val newFiles = fileTreeStream.filter(f => !originalFileList.contains(FileUtil.relativizeToAssetPath(f)))
-  val removedFiles = originalFileList.filter(f => !new File(s"$FileUtil.ASSETS_PATH/$f").exists)
+  val removedFiles = originalFileList.filter(f => !new File(s"${FileUtil.ASSETS_PATH}/$f").exists)
 
 
   @tailrec
@@ -68,8 +69,11 @@ object WorkshopContentPartitioner extends App {
   val addonDescription = Description(addonTextDescription)
 
   var partitionNumber = 0
-  manifest.foreach {
-
+  manifest.foreach { manifestEntry =>
+    partitionNumber += 1
+    val title = s"$addonTitlePrefix $partitionNumber"
+    println(s"Creating addon '$title'")
+    val createdGMA = GMA.create(title, addonDescription, manifestEntry.files.map( f => new File(s"${FileUtil.ASSETS_PATH}/$f")))
   }
 
 

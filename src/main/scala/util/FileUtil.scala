@@ -1,6 +1,7 @@
 package util
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileInputStream, FileOutputStream}
+
 import com.roundeights.hasher.Implicits._
 
 object FileUtil {
@@ -29,8 +30,8 @@ object FileUtil {
 	def relativizeToAssetPath(otherFile: File): String = ASSET_FOLDER.getAbsoluteFile.toURI.relativize(otherFile.getAbsoluteFile.toURI).getPath
 
 	def CRC32SignFile(file: File) = {
-		val crc = scala.io.Source.fromFile(file).crc32.bytes
-		val fileOutputStream = new FileOutputStream(file)
+		val crc = new FileInputStream(file).crc32.bytes
+		val fileOutputStream = new FileOutputStream(file, true)
 		try
 			fileOutputStream.write(crc)
 		finally

@@ -48,13 +48,13 @@ object GMA {
 	// Writes all the headers and other metadata to the start of the GMA file
 	private def writeHeader(title: String, description: Description)(implicit outputBuffer: BufferedOutputStream) = {
 		outputBuffer.write(ADDON_IDENT.getBytes)
-		outputBuffer.write(ADDON_VERSION)
+		outputBuffer.write(ADDON_VERSION.toChar)
 		// SteamId (unused)
 		outputBuffer.write(0)
 		// Timestamp
 		outputBuffer.write(BigInt(System.currentTimeMillis / 1000).toByteArray)
 		// Required content (unused)
-		outputBuffer.write(0)
+		outputBuffer.write(0.toChar)
 		// Addon Title
 		outputBuffer.write(title.getBytes)
 		// Addon description as json
@@ -71,12 +71,12 @@ object GMA {
 		var fileNum = 0
 		files.foreach { file =>
 			fileNum += 1
+			val crc = new FileInputStream(file).crc32
 			val fileSize = file.length()
-			val crc = scala.io.Source.fromFile(file).crc32.bytes
 			outputBuffer.write(fileNum)
 			outputBuffer.write(FileUtil.relativizeToAssetPath(file).toLowerCase.getBytes)
 			outputBuffer.write(BigInt(fileSize).toByteArray)
-			outputBuffer.write(crc)
+			outputBuffer.write(crc.bytes)
 		}
 		// Zero to signify end of file list
 		outputBuffer.write(0)
