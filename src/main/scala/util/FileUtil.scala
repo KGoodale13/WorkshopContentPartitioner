@@ -40,6 +40,6 @@ object FileUtil {
 
 	def strToNullTerminatedByteArray(string: String) = (string + "\0").getBytes
 
-	def paddedEndianInt(number: Long, padSize: Int) = BigInt(number).toByteArray.padTo(padSize, 0.toByte)
+	def paddedEndianInt(number: Long, padSize: Int) = BigInt(number).toByteArray.padTo(padSize, 0.toByte).reverse
 
 }
