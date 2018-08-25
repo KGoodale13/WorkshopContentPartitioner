@@ -2,6 +2,12 @@ import scala.util.matching.Regex
 
 package object gma {
 
+	// Hardcoded Addon format variables from here: https://github.com/garrynewman/gmad/blob/master/include/AddonFormat.h
+
+	val ADDON_IDENT = "GMAD"
+	val ADDON_VERSION = 3
+	val ADDON_APPID = 4000
+
 	val ADDON_WHITELIST: List[Regex] = List(
 		raw"lua/[a-zA-Z\\s]+.lua".r,
 		raw"scenes/[a-zA-Z\\s]+.vcd".r,
