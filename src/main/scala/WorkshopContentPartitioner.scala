@@ -4,37 +4,18 @@
 
 import java.io.File
 
+import gma.Description
 import persistence.ManifestEntry
 import persistence.Manifest
+import util.FileUtil
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
 
-object Main extends App {
+object WorkshopContentPartitioner extends App {
 
-  // The path of assets we will be partitioning into workshop addons
-  val ASSETS_PATH = sys.env("ASSETS_PATH")
-  val assetFolder = new File(ASSETS_PATH)
+  val addonTextDescription = System.getenv("ADDON_DESCRIPTION")
 
-  def relativizeToAssetPath(otherFile: File) = assetFolder.getAbsoluteFile.toURI.relativize(otherFile.getAbsoluteFile.toURI)
-
-  val manifestFile = new File(s"${assetFolder.getAbsolutePath}/.manifest")
-
-  val PARTITION_SIZE = 200000000L
-
-  val FOLDER_WHITELIST = Set(
-    "maps",
-    "backgrounds",
-    "gamemodes",
-    "materials",
-    "lua",
-    "scenes",
-    "models",
-    "scripts",
-    "particles",
-    "sound",
-    "resource"
-  )
+  val manifestFile = new File(s"${FileUtil.ASSET_FOLDER.getAbsolutePath}/.manifest")
 
   val originalManifest = {
     if (manifestFile.exists())
@@ -47,14 +28,15 @@ object Main extends App {
 
   // Source: https://stackoverflow.com/a/7264833/5404965
   def getFileTreeStream(f: File): Stream[File] =
-    f #:: (if (f.isDirectory && (f.getParentFile != assetFolder || FOLDER_WHITELIST.contains(f.getName))) f.listFiles().toStream.flatMap(getFileTreeStream) else Stream.empty)
+    f #::
+      (if (f.isDirectory && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName)))
+        f.listFiles().toStream.flatMap(getFileTreeStream)
+      else Stream.empty)
 
-  val fileTreeStream = getFileTreeStream(assetFolder)
+  val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER)
 
-  val newFiles = fileTreeStream.filter(f => !originalFileList.contains(relativizeToAssetPath(f).getPath))
-  val removedFiles = originalFileList.filter(f => !new File(s"$ASSETS_PATH/$f").exists)
-
-  println(removedFiles)
+  val newFiles = fileTreeStream.filter(f => !originalFileList.contains(FileUtil.relativizeToAssetPath(f)))
+  val removedFiles = originalFileList.filter(f => !new File(s"$FileUtil.ASSETS_PATH/$f").exists)
 
 
   @tailrec
@@ -64,7 +46,7 @@ object Main extends App {
 		currentSize: Long = 0
 	): (Stream[File], List[File]) = inputStream match {
     case Stream.Empty => (inputStream, currentFiles)
-    case file #:: xss if currentSize + file.length() <= PARTITION_SIZE =>
+    case file #:: xss if currentSize + file.length() <= FileUtil.PARTITION_SIZE =>
       takeFilesUntilSizeReached(xss, file :: currentFiles, currentSize + file.length())
     case _ => (inputStream, currentFiles)
   }
@@ -78,9 +60,17 @@ object Main extends App {
   }
 
   val manifest = partitionFiles(fileTreeStream).map { partition =>
-    ManifestEntry(partition.map(relativizeToAssetPath(_).getPath))
+    ManifestEntry(partition.map(FileUtil.relativizeToAssetPath))
   }.toList
 
   Manifest.saveManifestToFile(manifestFile, manifest)
+
+  val addonDescription = Description(addonTextDescription)
+
+  var partitionNumber = 0
+  manifest.foreach {
+
+  }
+
 
 }
