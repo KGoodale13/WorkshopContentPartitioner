@@ -5,7 +5,7 @@ import java.io._
 
 import play.api.libs.json._
 
-case class ManifestEntry(files: Seq[String])
+case class ManifestEntry(files: Seq[String], workshopId: Option[Int] = None)
 
 object Manifest {
 	implicit val manifestEntryFormat = Json.format[ManifestEntry]

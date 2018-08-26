@@ -5,6 +5,7 @@
 import java.io.File
 
 import gma.{Description, GMA}
+import gmpublish.GMPublish
 import persistence.ManifestEntry
 import persistence.Manifest
 import util.FileUtil
@@ -32,7 +33,7 @@ object WorkshopContentPartitioner extends App {
     f #::
       (if (f.isDirectory && !f.isHidden && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName)))
         f.listFiles().toStream.flatMap(getFileTreeStream)
-      else Stream.empty).filter(file => !file.isHidden && file.isFile)
+      else Stream.empty).filterNot(file => file.isHidden || file.isDirectory)
 
   val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER)
 
@@ -60,21 +61,33 @@ object WorkshopContentPartitioner extends App {
       filesInPartition #:: partitionFiles(newStream)
   }
 
+  // Create manifest if one doesn't exist. TODO: Handle cases where the manifest does exist. Both here and in the partitioner
   val manifest = partitionFiles(fileTreeStream).map { partition =>
     ManifestEntry(partition.map(FileUtil.relativizeToAssetPath))
   }.toList
 
-  Manifest.saveManifestToFile(manifestFile, manifest)
 
   val addonDescription = Description(addonTextDescription)
 
   var partitionNumber = 0
-  manifest.foreach { manifestEntry =>
+  val updatedManifest = manifest.map { manifestEntry =>
     partitionNumber += 1
     val title = s"$addonTitlePrefix $partitionNumber"
     println(s"Creating addon '$title'")
-    val createdGMA = GMA.create(title, addonDescription, manifestEntry.files.map( f => new File(s"${FileUtil.ASSETS_PATH}/$f")))
+
+    val createdGMA = GMA.create(title, addonDescription, manifestEntry.files.map(f => new File(s"${FileUtil.ASSETS_PATH}/$f")))
+
+    if(createdGMA.isDefined) {
+      println(s"Publishing Addon '$title'")
+      val addonId = GMPublish.createNewAddon(createdGMA.head)
+      manifestEntry.copy(workshopId = Some(addonId))
+    }
+    else {
+      println(s"Error: Failed to create GMA for Addon '$title'")
+      manifestEntry // Leave the manifest entry unchanged
+    }
   }
 
+  Manifest.saveManifestToFile(manifestFile, updatedManifest)
 
 }
