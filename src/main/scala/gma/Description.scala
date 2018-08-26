@@ -8,7 +8,7 @@ object Description {
 
 case class Description(
 	description: String,
-	`type`: String = "ServerContent",
+	`type`: String = "servercontent",
 	tags: List[String] = List("roleplay")
 ){
 	override def toString = Json.toJson[Description](this).toString()
