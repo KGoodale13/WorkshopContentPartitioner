@@ -20,16 +20,21 @@ object GMPublish {
 		foundIds.map(_.toInt)
 	}
 
-	def createNewAddon(addonGMA: File): Int = {
+	def createNewAddon(addonGMA: File): Option[Int] = {
 		println(addonGMA.getAbsolutePath)
 		val result: String = Seq(GM_PUBLISH_LOCATION, "create", "-icon", ICON_IMAGE, "-addon", addonGMA.getAbsolutePath) !!
 
 		println(s"Addon Create finished with result: $result")
 
 		// Get the id of the created addon. This should be the largest id
-		val addonId = getAddonIdList().reduceLeft((a, b) => if(a > b) a else b)
-		println(s"Addon Created with ID: $addonId. You need to set the visibility to public on this page: ${getWorkshopAddonLink(addonId)}")
-		addonId
+		val addonList = getAddonIdList()
+
+		if(addonList.nonEmpty){
+			val addonId = addonList.reduceLeft((a, b) => if(a > b) a else b)
+			println(s"Addon Created with ID: $addonId. You need to set the visibility to public on this page: ${getWorkshopAddonLink(addonId)}")
+			Some(addonId)
+		} else
+			None
 	}
 
 	def updateExistingAddon(addonId: Int, addonGMA: File): Boolean = {
