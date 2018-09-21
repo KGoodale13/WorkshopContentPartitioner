@@ -44,17 +44,10 @@ object WorkshopContentPartitioner extends App {
     */
   private def hasFileChanged(file: File): Boolean = {
     val relativePath = FileUtil.relativizeToAssetPath(file)
-    originalFiles.get(relativePath) match {
-      case Some(entry) =>
-        if (file.length() != entry.length) {
-          true
-        } else if (entry.lastModified == file.lastModified) {
-          false
-        } else {
-          entry.crc != FileUtils.checksumCRC32(file)
-        }
-      case None => false
-    }
+    originalFiles.get(relativePath).exists(entry =>
+      file.length() != entry.length ||
+        (entry.lastModified != file.lastModified && entry.crc != FileUtils.checksumCRC32(file))
+    )
   }
 
 
