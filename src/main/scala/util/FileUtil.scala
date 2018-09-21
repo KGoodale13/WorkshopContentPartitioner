@@ -1,9 +1,15 @@
 package util
 
 import java.io.{File, FileInputStream, FileOutputStream}
+import java.nio.file.Files
+import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
 
 import com.roundeights.hasher.Implicits._
 import com.typesafe.config.ConfigFactory
+import persistence.messages.WorkshopManifest
+
+import scala.util.Try
+
 
 object FileUtil {
 
@@ -28,6 +34,9 @@ object FileUtil {
 
 	val ASSET_FOLDER = new File(ASSETS_PATH)
 
+	def resolveRelativePath(path: String): File =
+		new File(s"${FileUtil.ASSETS_PATH}/$path")
+
 	def relativizeToAssetPath(otherFile: File): String = ASSET_FOLDER.getAbsoluteFile.toURI.relativize(otherFile.getAbsoluteFile.toURI).getPath
 
 	def CRC32SignFile(file: File) = {
@@ -43,4 +52,22 @@ object FileUtil {
 
 	def paddedEndianInt(number: Long, padSize: Int) = BigInt(number).toByteArray.reverse.padTo(padSize, 0.toByte)
 
+  def parseManifest(file: File): WorkshopManifest = {
+    Try {
+      val zipStream = new ZipInputStream(new FileInputStream(file))
+      zipStream.getNextEntry
+      val result = WorkshopManifest.parseFrom(zipStream)
+      zipStream.close()
+      result
+    }.getOrElse(WorkshopManifest())
+  }
+
+  def writeManifest(file: File, manifest: WorkshopManifest): Unit = {
+    Try {
+      val zipStream = new ZipOutputStream(new FileOutputStream(file))
+      zipStream.putNextEntry(new ZipEntry("manifest"))
+      manifest.writeTo(zipStream)
+      zipStream.close()
+    }
+  }
 }
