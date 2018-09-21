@@ -6,8 +6,8 @@ import java.io.File
 
 import gma.{Description, GMA}
 import gmpublish.GMPublish
-import persistence.ManifestEntry
-import persistence.Manifest
+import org.apache.commons.io.FileUtils
+import persistence.messages.{ManifestAddonEntry, ManifestFileEntry, WorkshopManifest}
 import util.FileUtil
 
 import scala.annotation.tailrec
@@ -21,32 +21,55 @@ object WorkshopContentPartitioner extends App {
 
   val originalManifest = {
     if (manifestFile.exists())
-      Manifest.parseManifestFile(scala.io.Source.fromFile(manifestFile).mkString).getOrElse(List[ManifestEntry]())
+      FileUtil.parseManifest(manifestFile)
     else
-      List[ManifestEntry]()
+      WorkshopManifest(Nil)
   }
 
-  val originalFileList = originalManifest.flatMap(_.files).toSet
+  val originalFiles: Map[String, ManifestFileEntry] =
+    originalManifest.addons.flatMap(_.files.map(entry => entry.path -> entry)).toMap
+
+  private def isValidFolder(f: File): Boolean =
+    f.isDirectory && !f.isHidden && !f.getName.startsWith(".") && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName))
 
   // Source: https://stackoverflow.com/a/7264833/5404965
   def getFileTreeStream(f: File): Stream[File] =
-    f #::
-      (if (f.isDirectory && !f.isHidden && (f.getParentFile != FileUtil.ASSET_FOLDER || FileUtil.FOLDER_WHITELIST.contains(f.getName)))
-        f.listFiles().toStream.flatMap(getFileTreeStream)
-      else Stream.empty).filterNot(file => file.isHidden || file.isDirectory)
+    f #:: (if (isValidFolder(f)) f.listFiles().toStream.flatMap(getFileTreeStream) else Stream.empty)
 
-  val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER)
+  val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER).filterNot(file => file.isHidden || file.isDirectory || file.getName.startsWith("."))
 
-  val newFiles = fileTreeStream.filter(f => !originalFileList.contains(FileUtil.relativizeToAssetPath(f)))
-  val removedFiles = originalFileList.filter(f => !new File(s"${FileUtil.ASSETS_PATH}/$f").exists)
+  /**
+    * @return true iff the file has already been tracked in the manifest but the content changed
+    */
+  private def hasFileChanged(file: File): Boolean = {
+    val relativePath = FileUtil.relativizeToAssetPath(file)
+    originalFiles.get(relativePath) match {
+      case Some(entry) =>
+        if (file.length() != entry.length) {
+          true
+        } else if (entry.lastModified == file.lastModified) {
+          false
+        } else {
+          entry.crc != FileUtils.checksumCRC32(file)
+        }
+      case None => false
+    }
+  }
+
+
+  val newFiles = fileTreeStream.filter(f => !originalFiles.contains(FileUtil.relativizeToAssetPath(f)))
+  val removedFiles = originalFiles.keys.filter(f => !new File(s"${FileUtil.ASSETS_PATH}/$f").exists)
+  val updatedFiles = fileTreeStream.collect {
+    case f if hasFileChanged(f) => f
+  }
 
 
   @tailrec
   def takeFilesUntilSizeReached(
-		inputStream: Stream[File],
-		currentFiles: List[File] = Nil,
-		currentSize: Long = 0
-	): (Stream[File], List[File]) = inputStream match {
+                                 inputStream: Stream[File],
+                                 currentFiles: List[File] = Nil,
+                                 currentSize: Long = 0
+                               ): (Stream[File], List[File]) = inputStream match {
     case Stream.Empty => (inputStream, currentFiles)
     case file #:: xss if currentSize + file.length() <= FileUtil.PARTITION_SIZE =>
       takeFilesUntilSizeReached(xss, file :: currentFiles, currentSize + file.length())
@@ -61,33 +84,40 @@ object WorkshopContentPartitioner extends App {
       filesInPartition #:: partitionFiles(newStream)
   }
 
+  private def generateFileEntry(file: File): ManifestFileEntry = {
+    val path = FileUtil.relativizeToAssetPath(file)
+    val crc = FileUtils.checksumCRC32(file)
+    ManifestFileEntry(path, file.lastModified(), file.length().toInt, crc.toInt)
+  }
+
+
   // Create manifest if one doesn't exist. TODO: Handle cases where the manifest does exist. Both here and in the partitioner
   val manifest = partitionFiles(fileTreeStream).map { partition =>
-    ManifestEntry(partition.map(FileUtil.relativizeToAssetPath))
+    val fileEntries = partition.map(generateFileEntry)
+    ManifestAddonEntry(fileEntries)
   }.toList
 
 
   val addonDescription = Description(addonTextDescription)
 
   var partitionNumber = 0
-  val updatedManifest = manifest.map { manifestEntry =>
+  val updatedManifest = WorkshopManifest(manifest.map { manifestEntry =>
     partitionNumber += 1
     val title = s"$addonTitlePrefix $partitionNumber"
     println(s"Creating addon '$title'")
 
-    val createdGMA = GMA.create(title, addonDescription, manifestEntry.files.map(f => new File(s"${FileUtil.ASSETS_PATH}/$f")))
+    val createdGMA = GMA.create(title, addonDescription, manifestEntry.files.map(f => FileUtil.resolveRelativePath(f.path)))
 
-    if(createdGMA.isDefined) {
+    if (createdGMA.isDefined) {
       println(s"Publishing Addon '$title'")
       val addonId = GMPublish.createNewAddon(createdGMA.head)
-      manifestEntry.copy(workshopId = Some(addonId))
+      manifestEntry.copy(workshopId = addonId)
     }
     else {
       println(s"Error: Failed to create GMA for Addon '$title'")
       manifestEntry // Leave the manifest entry unchanged
     }
-  }
+  })
 
-  Manifest.saveManifestToFile(manifestFile, updatedManifest)
-
+  FileUtil.writeManifest(manifestFile, updatedManifest)
 }

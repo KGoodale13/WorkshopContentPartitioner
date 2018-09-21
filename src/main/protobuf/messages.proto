@@ -1,0 +1,19 @@
+syntax = "proto3";
+option java_package = "persistence";
+
+message ManifestFileEntry {
+    string path = 1;
+    fixed64 lastModified = 2;
+    uint32 length = 3;
+    fixed32 crc = 4;
+}
+
+message ManifestAddonEntry {
+    repeated ManifestFileEntry files = 1;
+    fixed32 workshopId = 2;
+}
+
+
+message WorkshopManifest {
+    repeated ManifestAddonEntry addons = 1;
+}

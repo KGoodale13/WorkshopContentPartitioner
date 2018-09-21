@@ -1,9 +1,12 @@
 package gma
 
 import java.io._
+import java.nio.file.Files
 
 import com.roundeights.hasher.Implicits._
 import util.FileUtil
+
+import scala.util.Try
 
 object GMA {
 
@@ -84,11 +87,7 @@ object GMA {
 	// Writes the actual content of each file to the gma file
 	private def writeFileContents(files: Seq[File])(implicit outputBuffer: BufferedOutputStream) = {
 		files.foreach { file =>
-			val fileInputStream = new BufferedInputStream(new FileInputStream(file))
-			try
-				Stream.continually(fileInputStream.read).takeWhile(_ != -1).foreach(outputBuffer.write)
-			finally
-				fileInputStream.close()
+			Files.copy(file.toPath, outputBuffer)
 		}
 	}
 
