@@ -3,11 +3,12 @@ package util
 import java.io.{File, FileInputStream, FileOutputStream}
 
 import com.roundeights.hasher.Implicits._
+import com.typesafe.config.ConfigFactory
 
 object FileUtil {
 
 	// The path of assets we will be partitioning into workshop addons
-	val ASSETS_PATH = sys.env("ASSETS_PATH")
+	val ASSETS_PATH = ConfigFactory.load().getString("assets_path")
 	// The max uncompressed size of each addon
 	val PARTITION_SIZE = 210000000L
 	// Whitelist of folders to create addons for

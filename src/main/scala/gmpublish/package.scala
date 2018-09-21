@@ -1,4 +1,6 @@
-package object gmpublish {
+import com.typesafe.config.ConfigFactory
 
-	val GM_PUBLISH_LOCATION = System.getenv("GMPUBLISH_EXE_PATH")
+package object gmpublish {
+	val ICON_IMAGE = ConfigFactory.load().getString("workshop.icon")
+	val GM_PUBLISH_LOCATION = ConfigFactory.load().getString("gmpublish_location")
 }

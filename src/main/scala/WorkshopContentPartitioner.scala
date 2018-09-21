@@ -9,13 +9,14 @@ import gmpublish.GMPublish
 import persistence.ManifestEntry
 import persistence.Manifest
 import util.FileUtil
+import com.typesafe.config.ConfigFactory
 
 import scala.annotation.tailrec
 
 object WorkshopContentPartitioner extends App {
 
-  val addonTextDescription = System.getenv("ADDON_DESCRIPTION")
-  val addonTitlePrefix = System.getenv("ADDON_TITLE_PREFIX").trim()
+  val addonTextDescription = ConfigFactory.load().getString("workshop.description")
+  val addonTitlePrefix = ConfigFactory.load().getString("workshop.title_prefix")
 
   val manifestFile = new File(s"${FileUtil.ASSET_FOLDER.getAbsolutePath}/.manifest")
 

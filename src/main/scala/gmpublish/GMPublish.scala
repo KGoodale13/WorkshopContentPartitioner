@@ -8,8 +8,6 @@ import scala.util.matching.Regex
 
 object GMPublish {
 
-	val ICON_IMAGE = System.getenv("ICON_PATH")
-
 	def getWorkshopAddonLink(id: Int) = s"https://steamcommunity.com/sharedfiles/filedetails/?id=$id"
 
 	val addonListIdPattern = raw"\s\d{9,10}\s".r
