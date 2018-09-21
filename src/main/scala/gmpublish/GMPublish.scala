@@ -17,7 +17,7 @@ object GMPublish {
 	private def getAddonIdList(): List[Int] = {
 		val result = Seq(GM_PUBLISH_LOCATION, "list") !!
 		val foundIds = addonListIdPattern.findAllIn(result).toList
-		foundIds.map(_.toInt)
+		foundIds.map(_.trim.toInt)
 	}
 
 	def createNewAddon(addonGMA: File): Option[Int] = {
