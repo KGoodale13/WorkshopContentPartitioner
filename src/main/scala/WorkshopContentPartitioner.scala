@@ -60,10 +60,10 @@ object WorkshopContentPartitioner extends App {
 
   @tailrec
   def takeFilesUntilSizeReached(
-                                 inputStream: Stream[File],
-                                 currentFiles: List[File] = Nil,
-                                 currentSize: Long = 0
-                               ): (Stream[File], List[File]) = inputStream match {
+     inputStream: Stream[File],
+     currentFiles: List[File] = Nil,
+     currentSize: Long = 0
+   ): (Stream[File], List[File]) = inputStream match {
     case Stream.Empty => (inputStream, currentFiles)
     case file #:: xss if currentSize + file.length() <= FileUtil.PARTITION_SIZE =>
       takeFilesUntilSizeReached(xss, file :: currentFiles, currentSize + file.length())
