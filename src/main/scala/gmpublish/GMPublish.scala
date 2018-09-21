@@ -34,6 +34,14 @@ object GMPublish {
 		addonId
 	}
 
-	//def updateExistingAddon(addonId: Int, addonGMA: File)
+	def updateExistingAddon(addonId: Int, addonGMA: File): Boolean = {
+		val result: String = Seq(GM_PUBLISH_LOCATION, "update", "-addon", addonGMA.getAbsolutePath, "-id", addonId)
+
+		// Probably not the best way to determine success or failure but works.
+		val success = result.contains("Success!")
+		if(!success)
+			println(s"Error updating. Got result: $result")
+		success
+	}
 
 }
