@@ -2,9 +2,11 @@ package gmpublish
 
 import java.io.File
 
+import cats.effect.IO
+import util.IOUtil.putStrLn
+
 import scala.language.postfixOps
 import sys.process._
-import scala.util.matching.Regex
 
 object GMPublish {
 
@@ -14,37 +16,42 @@ object GMPublish {
 
 	// TODO: Handle error codes - List of error codes here: https://gmod.facepunch.com/f/gmoddev/nyqm/GMPublish-publish-addons-to-workshop/1/
 
-	private def getAddonIdList(): List[Int] = {
-		val result = Seq(GM_PUBLISH_LOCATION, "list") !!
-		val foundIds = addonListIdPattern.findAllIn(result).toList
-		foundIds.map(_.trim.toInt)
+	private def getLatestAddonId: IO[Int] = {
+		val addonList = IO { Seq(GM_PUBLISH_LOCATION, "list") !! }
+    addonList.flatMap { result =>
+      val foundIds = addonListIdPattern.findAllIn(result).toList.map(_.trim.toInt)
+      if (foundIds.nonEmpty) {
+        val addonId = foundIds.reduceLeft((a, b) => if(a > b) a else b)
+        IO.pure(addonId)
+      } else {
+        IO.raiseError(new Exception(""))
+      }
+    }
 	}
 
-	def createNewAddon(addonGMA: File): Option[Int] = {
+	def createNewAddon(addonGMA: File): IO[Int] = {
 		println(addonGMA.getAbsolutePath)
-		val result: String = Seq(GM_PUBLISH_LOCATION, "create", "-icon", ICON_IMAGE, "-addon", addonGMA.getAbsolutePath) !!
-
-		println(s"Addon Create finished with result: $result")
-
-		// Get the id of the created addon. This should be the largest id
-		val addonList = getAddonIdList()
-
-		if(addonList.nonEmpty){
-			val addonId = addonList.reduceLeft((a, b) => if(a > b) a else b)
-			println(s"Addon Created with ID: $addonId. You need to set the visibility to public on this page: ${getWorkshopAddonLink(addonId)}")
-			Some(addonId)
-		} else
-			None
+		val processResult = IO {
+			Seq(GM_PUBLISH_LOCATION, "create", "-icon", ICON_IMAGE, "-addon", addonGMA.getAbsolutePath) !!
+		}
+		for (result <- processResult;
+				 _ <- putStrLn(s"Addon Create finished with result: $result");
+         addonId <- getLatestAddonId;
+         _ <- putStrLn(s"Addon Created with ID: $addonId. You need to set the visibility to public on this page: ${getWorkshopAddonLink(addonId)}")) yield  {
+      addonId
+    }
 	}
 
-	def updateExistingAddon(addonId: Int, addonGMA: File): Boolean = {
-		val result: String = Seq(GM_PUBLISH_LOCATION, "update", "-addon", addonGMA.getAbsolutePath, "-id", addonId.toString) !!
-
-		// Probably not the best way to determine success or failure but works.
-		val success = result.contains("Success!")
-		if(!success)
-			println(s"Error updating. Got result: $result")
-		success
+	def updateExistingAddon(addonId: Int, addonGMA: File): IO[Unit] = {
+		IO {
+      Seq(GM_PUBLISH_LOCATION, "update", "-addon", addonGMA.getAbsolutePath, "-id", addonId.toString) !!
+    }.flatMap { result =>
+      if (result.contains("Success!")) {
+        IO.pure(())
+      } else {
+        IO.raiseError(new Exception(s"Error updating. Got result: $result"))
+      }
+    }
 	}
 
 }

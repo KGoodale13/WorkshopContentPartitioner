@@ -3,10 +3,10 @@ package gma
 import java.io._
 import java.nio.file.Files
 
+import cats.effect.IO
 import com.roundeights.hasher.Implicits._
 import util.FileUtil
-
-import scala.util.Try
+import util.IOUtil.runWithClosable
 
 object GMA {
 
@@ -17,38 +17,33 @@ object GMA {
 		* @param files - The files to include in this addon
 		* @return Option[File] - If successful returns a reference to the completed GMA file.
 		*/
-	def create(title: String, description: Description, files: Seq[File]): Option[File] = {
+	def create(title: String, description: Description, files: Seq[File]): IO[File] = {
 
 		// Check for files that don't match the whitelisted patterns
 		val invalidFileOpt= files.collectFirst { case file if !pathIsWhiteListed(file.getPath) => file }
 
 		if(invalidFileOpt.isDefined){
-			println(s"[Error] File: ${invalidFileOpt.head.getPath} is not allowed on the workshop")
-			return None
+			IO.raiseError(new Exception(s"[Error] File: ${invalidFileOpt.head.getPath} is not allowed on the workshop"))
 		} else if(files.isEmpty){
-			println(s"[Error] file list is empty. Unable to create GMA.")
-			return None
+			IO.raiseError(new Exception(s"[Error] file list is empty. Unable to create GMA."))
+		} else {
+			val newGMA = new File(s"${title.replace(' ', '-')}.gma")
+      val ioResult = runWithClosable(new BufferedOutputStream(new FileOutputStream(newGMA))) { implicit bos =>
+        for (_ <- writeHeader(title, description);
+             _ <- writeFileList(files);
+             _ <- writeFileContents(files)) yield {
+          ()
+        }
+      }
+      ioResult.flatMap(_ => FileUtil.CRC32SignFile(newGMA))
+        .map(_ => newGMA)
 		}
-
-		val newGMA = new File(s"${title.replace(' ', '-')}.gma")
-
-		implicit val gmaBufferedWriter: BufferedOutputStream = new BufferedOutputStream(new FileOutputStream(newGMA))
-
-		try {
-			writeHeader(title, description)
-			writeFileList(files)
-			writeFileContents(files)
-		} finally
-			gmaBufferedWriter.close()
-
-		// Sign the end of the file with a crc32 of the completed gma
-		FileUtil.CRC32SignFile(newGMA)
-		Some(newGMA)
 	}
 
 
 	// Writes all the headers and other metadata to the start of the GMA file
-	private def writeHeader(title: String, description: Description)(implicit outputBuffer: BufferedOutputStream) = {
+	private def writeHeader(title: String, description: Description)
+												 (implicit outputBuffer: BufferedOutputStream): IO[Unit] = IO {
 		outputBuffer.write(ADDON_IDENT.getBytes)
 		outputBuffer.write(ADDON_VERSION.toChar)
 		// SteamId (unused)
@@ -68,7 +63,7 @@ object GMA {
 	}
 
 	// Writes our file list and other associated metadata to the gma file
-	private def writeFileList(files: Seq[File])(implicit outputBuffer: BufferedOutputStream) = {
+	private def writeFileList(files: Seq[File])(implicit outputBuffer: BufferedOutputStream): IO[Unit] = IO {
 		// Write our file list
 		var fileNum = 0
 		files.foreach { file =>
@@ -85,7 +80,7 @@ object GMA {
 	}
 
 	// Writes the actual content of each file to the gma file
-	private def writeFileContents(files: Seq[File])(implicit outputBuffer: BufferedOutputStream) = {
+	private def writeFileContents(files: Seq[File])(implicit outputBuffer: BufferedOutputStream): IO[Unit] = IO {
 		files.foreach { file =>
 			Files.copy(file.toPath, outputBuffer)
 		}

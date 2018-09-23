@@ -4,14 +4,17 @@
 
 import java.io.File
 
+import cats.effect.IO
 import gma.{Description, GMA}
 import gmpublish.GMPublish
 import org.apache.commons.io.FileUtils
 import persistence.messages.{ManifestAddonEntry, ManifestFileEntry, WorkshopManifest}
 import util.FileUtil
 import com.typesafe.config.ConfigFactory
+import cats.implicits._
 
 import scala.annotation.tailrec
+import scala.util.{Failure, Success, Try}
 
 object WorkshopContentPartitioner extends App {
 
@@ -20,15 +23,12 @@ object WorkshopContentPartitioner extends App {
 
   val manifestFile = new File(s"${FileUtil.ASSET_FOLDER.getAbsolutePath}/.manifest")
 
-  val originalManifest = {
+  val originalManifestÍO = {
     if (manifestFile.exists())
       FileUtil.parseManifest(manifestFile)
     else
-      WorkshopManifest(Nil)
+      IO.pure(WorkshopManifest(Nil))
   }
-
-  val originalFiles: Map[String, ManifestFileEntry] =
-    originalManifest.addons.flatMap(_.files.map(entry => entry.path -> entry)).toMap
 
   private def isValidFolder(f: File): Boolean =
     f.isDirectory &&
@@ -45,7 +45,7 @@ object WorkshopContentPartitioner extends App {
   /**
     * @return true iff the file has already been tracked in the manifest but the content changed
     */
-  private def hasFileChanged(file: File): Boolean = {
+  private def hasFileChanged(file: File, originalFiles: Map[String, ManifestFileEntry]): IO[Boolean] = IO {
     val relativePath = FileUtil.relativizeToAssetPath(file)
     originalFiles.get(relativePath).exists(entry =>
       file.length() != entry.length ||
@@ -72,13 +72,13 @@ object WorkshopContentPartitioner extends App {
       filesInPartition #:: partitionFiles(newStream)
   }
 
-  private def generateFileEntry(file: File): ManifestFileEntry = {
+  private def generateFileEntry(file: File): IO[ManifestFileEntry] = IO {
     val path = FileUtil.relativizeToAssetPath(file)
     val crc = FileUtils.checksumCRC32(file)
     ManifestFileEntry(path, file.lastModified(), file.length().toInt, crc.toInt)
   }
 
-  private def createGMA(partitionNumber: Int, files: Seq[File]) = {
+  private def createGMA(partitionNumber: Int, files: Seq[File]): IO[File] = {
     val title = s"$addonTitlePrefix $partitionNumber"
     val addonDescription = Description(addonTextDescription)
 
@@ -87,66 +87,83 @@ object WorkshopContentPartitioner extends App {
 
   // loop over the original manifest, removing any files that were deleted and adding any new files that can fit
 
-  def fillExistingAddons(newFiles: Stream[File]): (Seq[ManifestAddonEntry], Stream[File]) = {
+  def fillExistingAddons(newFiles: Stream[File],
+                         originalManifest: WorkshopManifest,
+                         originalFiles: Map[String, ManifestFileEntry]): IO[(List[ManifestAddonEntry], Stream[File])] = {
+    //TODO: Remove mutable state
     var homelessFiles = newFiles
-    val modifiedManifests = originalManifest.addons.flatMap { addon =>
+    val modifiedManifests: IO[List[ManifestAddonEntry]] = originalManifest.addons.toList.map { addon =>
       val partitionNumber = addon.partitionNumber
-      val files =
+      val filesIO: IO[List[ManifestFileEntry]] =
         // Remove any deleted files from the manifest
-        addon.files.filter(f => FileUtil.resolveRelativePath(f.path).exists)
+        addon.files.toList.filter(f => FileUtil.resolveRelativePath(f.path).exists)
         // Update the file entries of any changed files
           .map(f =>
-            if(hasFileChanged(FileUtil.resolveRelativePath(f.path)))
-              generateFileEntry(FileUtil.resolveRelativePath(f.path))
-            else f
-          )
-
-      // Attempt to add any new files to this addon if there's room
-      val currentAddonSize = files.map(_.length).sum
-      val (remainingFiles, filesAdded) = takeFilesUntilSizeReached(homelessFiles, currentSize = currentAddonSize)
-      homelessFiles = remainingFiles
-
-      val newManifestFileEntries = files ++ filesAdded.map(generateFileEntry)
-      val filesInAddon = newManifestFileEntries.map(f => FileUtil.resolveRelativePath(f.path))
-      for {
-        gmaFile <- createGMA(partitionNumber, filesInAddon)
-      } yield {
-        if(GMPublish.updateExistingAddon(addon.workshopId, gmaFile)) {
-          println(s"Updated content pack $partitionNumber")
-          addon.copy(files = newManifestFileEntries)
-        } else {
-          println(s"Failed to update content pack $partitionNumber")
-          addon
-        }
+            hasFileChanged(FileUtil.resolveRelativePath(f.path), originalFiles).flatMap { changed =>
+              if (changed) {
+                generateFileEntry(FileUtil.resolveRelativePath(f.path))
+              } else {
+                IO.pure(f)
+              }
+            }
+        ).sequence
+      val newManifestFileEntriesIO = filesIO.flatMap { fileEntries =>
+        val files = fileEntries.map(e => FileUtil.resolveRelativePath(e.path))
+        val currentAddonSize = files.map(_.length).sum
+        // Attempt to add any new files to this addon if there's room
+        val (remainingFiles, filesAdded) = takeFilesUntilSizeReached(homelessFiles, currentSize = currentAddonSize)
+        homelessFiles = remainingFiles
+        val addedEntries: IO[List[ManifestFileEntry]] = filesAdded.map(generateFileEntry).sequence
+        addedEntries.map(_ ++ fileEntries)
       }
+      for {
+        newManifestFileEntries <- newManifestFileEntriesIO
+        filesInAddon = newManifestFileEntries.map { f => FileUtil.resolveRelativePath(f.path) }
+        gmaFile <- createGMA(partitionNumber, filesInAddon)
+        _ <- GMPublish.updateExistingAddon(addon.workshopId, gmaFile)
+      } yield {
+        addon.copy(files = newManifestFileEntries)
+      }
+    }.sequence
+    modifiedManifests.map { m =>
+      (m, homelessFiles)
     }
-    (modifiedManifests, homelessFiles)
   }
 
-  def createNewContentPacksForFiles(homelessFiles: Stream[File]): Seq[ManifestAddonEntry] = {
+  def createNewContentPacksForFiles(homelessFiles: Stream[File], originalManifest: WorkshopManifest): IO[List[ManifestAddonEntry]] = {
+    //TODO: Remove mutable state
     var partitionNumber = originalManifest.addons.length + 1
-    partitionFiles(homelessFiles).flatMap { partition =>
+    partitionFiles(homelessFiles).map { partition =>
+      val filesIO: IO[List[ManifestFileEntry]] = partition.toList.map(generateFileEntry).sequence
       for {
         newGMA <- createGMA(partitionNumber, partition)
         addonId <- GMPublish.createNewAddon(newGMA)
+        files <- filesIO
       } yield {
         partitionNumber += 1
-        new ManifestAddonEntry(
-          files = partition.map(generateFileEntry),
+        ManifestAddonEntry(
+          files = files,
           workshopId = addonId
         )
       }
+    }.toList.sequence
+  }
+
+  val ioAction =
+    for (originalManifest <- originalManifestÍO;
+         originalFiles = originalManifest.addons.flatMap(_.files.map(entry => entry.path -> entry)).toMap;
+         newFiles = fileTreeStream.filter(f => !originalFiles.contains(FileUtil.relativizeToAssetPath(f)));
+         addonResult <- fillExistingAddons(newFiles, originalManifest, originalFiles);
+         (updatedManifest, homelessFiles) = addonResult;
+         newAddonManifests <- createNewContentPacksForFiles(homelessFiles, originalManifest);
+         newWorkshopManifest = WorkshopManifest(updatedManifest ++ newAddonManifests);
+         _ <- FileUtil.writeManifest(manifestFile, newWorkshopManifest)) yield {
+      ()
     }
+  Try {
+    ioAction.unsafeRunSync()
+  } match {
+    case Success(_) => println("Partitioned successfully")
+    case Failure(ex) => println(ex.getMessage)
   }
-
-
-  val newFiles = fileTreeStream.filter(f => !originalFiles.contains(FileUtil.relativizeToAssetPath(f)))
-
-  val manifest = {
-    val (updatedManifest: Seq[ManifestAddonEntry], homelessFiles: Stream[File]) = fillExistingAddons(newFiles)
-    val newAddonManifests = createNewContentPacksForFiles(homelessFiles)
-    WorkshopManifest(updatedManifest ++ newAddonManifests)
-  }
-
-  FileUtil.writeManifest(manifestFile, manifest)
 }
