@@ -88,34 +88,32 @@ object WorkshopContentPartitioner extends App {
   // loop over the original manifest, removing any files that were deleted and adding any new files that can fit
 
   def fillExistingAddons(newFiles: Stream[File]): (Seq[ManifestAddonEntry], Stream[File]) = {
-    var partitionNumber = 0 // used to keep track of which index we are at
     var homelessFiles = newFiles
     val modifiedManifests = originalManifest.addons.flatMap { addon =>
-      partitionNumber += 1
-
+      val partitionNumber = addon.partitionNumber
       val files =
         // Remove any deleted files from the manifest
-        addon.files.filter(f => !FileUtil.resolveRelativePath(f.path).exists)
+        addon.files.filter(f => FileUtil.resolveRelativePath(f.path).exists)
         // Update the file entries of any changed files
-        addon.files.map(f =>
-          if(hasFileChanged(FileUtil.resolveRelativePath(f.path)))
-            generateFileEntry(FileUtil.resolveRelativePath(f.path))
-          else f
-        )
+          .map(f =>
+            if(hasFileChanged(FileUtil.resolveRelativePath(f.path)))
+              generateFileEntry(FileUtil.resolveRelativePath(f.path))
+            else f
+          )
 
       // Attempt to add any new files to this addon if there's room
-      val currentAddonSize = files.foldLeft(0L)(_ + _.length)
+      val currentAddonSize = files.map(_.length).sum
       val (remainingFiles, filesAdded) = takeFilesUntilSizeReached(homelessFiles, currentSize = currentAddonSize)
       homelessFiles = remainingFiles
 
-      val newAddonFileList = files ++ filesAdded.map(generateFileEntry)
-
+      val newManifestFileEntries = files ++ filesAdded.map(generateFileEntry)
+      val filesInAddon = newManifestFileEntries.map(f => FileUtil.resolveRelativePath(f.path))
       for {
-        gmaFile <- createGMA(partitionNumber, newAddonFileList.map(f => FileUtil.resolveRelativePath(f.path)))
+        gmaFile <- createGMA(partitionNumber, filesInAddon)
       } yield {
-        if(GMPublish.updateExistingAddon(addon.workshopId, gmaFile)){
+        if(GMPublish.updateExistingAddon(addon.workshopId, gmaFile)) {
           println(s"Updated content pack $partitionNumber")
-          addon.copy(files = newAddonFileList)
+          addon.copy(files = newManifestFileEntries)
         } else {
           println(s"Failed to update content pack $partitionNumber")
           addon

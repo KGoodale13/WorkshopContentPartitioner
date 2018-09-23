@@ -10,7 +10,8 @@ message ManifestFileEntry {
 
 message ManifestAddonEntry {
     repeated ManifestFileEntry files = 1;
-    fixed32 workshopId = 2;
+    uint32 partitionNumber = 2;
+    fixed32 workshopId = 3;
 }
 
 
