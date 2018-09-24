@@ -5,7 +5,8 @@ import java.nio.file.Files
 
 import cats.effect.IO
 import com.roundeights.hasher.Implicits._
-import util.FileUtil
+import com.typesafe.config.ConfigFactory
+import util.{FileUtil, IOUtil}
 import util.IOUtil.runWithClosable
 
 object GMA {
@@ -18,20 +19,22 @@ object GMA {
 		* @return Option[File] - If successful returns a reference to the completed GMA file.
 		*/
 	def create(title: String, description: Description, files: Seq[File]): IO[File] = {
-
 		// Check for files that don't match the whitelisted patterns
-		val invalidFileOpt= files.collectFirst { case file if !pathIsWhiteListed(file.getPath) => file }
+    val filteredFiles = files.filter { file => !isFileIgnored(FileUtil.relativizeToAssetPath(file).toLowerCase)}
+		val invalidFileOpt= filteredFiles.collectFirst {
+			case file if !pathIsWhiteListed(FileUtil.relativizeToAssetPath(file).toLowerCase) => file
+		}
 
-		if(invalidFileOpt.isDefined){
+		if(invalidFileOpt.isDefined) {
 			IO.raiseError(new Exception(s"[Error] File: ${invalidFileOpt.head.getPath} is not allowed on the workshop"))
-		} else if(files.isEmpty){
+		} else if(filteredFiles.isEmpty){
 			IO.raiseError(new Exception(s"[Error] file list is empty. Unable to create GMA."))
 		} else {
 			val newGMA = new File(s"${title.replace(' ', '-')}.gma")
       val ioResult = runWithClosable(new BufferedOutputStream(new FileOutputStream(newGMA))) { implicit bos =>
         for (_ <- writeHeader(title, description);
-             _ <- writeFileList(files);
-             _ <- writeFileContents(files)) yield {
+             _ <- writeFileList(filteredFiles);
+             _ <- writeFileContents(filteredFiles)) yield {
           ()
         }
       }
@@ -65,9 +68,8 @@ object GMA {
 	// Writes our file list and other associated metadata to the gma file
 	private def writeFileList(files: Seq[File])(implicit outputBuffer: BufferedOutputStream): IO[Unit] = IO {
 		// Write our file list
-		var fileNum = 0
-		files.foreach { file =>
-			fileNum += 1
+		val stream = IOUtil.intStream(1)
+		files.zip(stream).foreach { case (file, fileNum) =>
 			val crc = new FileInputStream(file).crc32
 			val fileSize = file.length()
 			outputBuffer.write(FileUtil.paddedEndianInt(fileNum, 4))

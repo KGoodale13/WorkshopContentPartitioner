@@ -15,4 +15,6 @@ object IOUtil {
         openStream.close()
       }
     }
+
+  def intStream(start: Int): Stream[Int] = Stream.iterate(start)(_ + 1)
 }

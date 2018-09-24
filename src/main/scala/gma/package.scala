@@ -1,6 +1,23 @@
+import com.typesafe.config.ConfigFactory
+
 import scala.util.matching.Regex
+import scala.collection.JavaConverters._
 
 package object gma {
+
+  private def convertWildcard(wildcardStr: String) =
+    wildcardStr.toLowerCase
+      .replace("*", ".*")
+      .replace("?", ".")
+
+	private val GM_IGNORE_REGEX = ConfigFactory.load().getStringList("ignore")
+		.asScala.toList
+		.map(regex => s"(${convertWildcard(regex)})")
+		.mkString("|").r
+
+	def isFileIgnored(path: String): Boolean = {
+		GM_IGNORE_REGEX.findFirstIn(path).isDefined
+	}
 
 	// Hardcoded Addon format variables from here: https://github.com/garrynewman/gmad/blob/master/include/AddonFormat.h
 
