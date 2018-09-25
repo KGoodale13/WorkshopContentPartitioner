@@ -24,7 +24,7 @@ object GMPublish {
         val addonId = foundIds.reduceLeft((a, b) => if(a > b) a else b)
         IO.pure(addonId)
       } else {
-        IO.raiseError(new Exception(""))
+        IO.raiseError(new Exception("Unable to find addon Id of published addon"))
       }
     }
 	}
