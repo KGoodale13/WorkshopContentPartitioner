@@ -1,5 +1,0 @@
-package persistence
-
-class WorkshopAddons {
-
-}
