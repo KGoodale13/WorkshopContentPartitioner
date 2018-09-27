@@ -40,7 +40,7 @@ object WorkshopContentPartitioner extends App {
   def getFileTreeStream(f: File): Stream[File] =
     f #:: (if (isValidFolder(f)) f.listFiles().toStream.flatMap(getFileTreeStream) else Stream.empty)
 
-  val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER).filterNot(file => file.isHidden || file.isDirectory || file.getName.startsWith("."))
+  val fileTreeStream = getFileTreeStream(FileUtil.ASSET_FOLDER).filterNot(file => file.isHidden || file.isDirectory || file.getName.startsWith(".") || file.getParentFile() == FileUtil.ASSET_FOLDER)
 
   /**
     * @return true iff the file has already been tracked in the manifest but the content changed
@@ -147,7 +147,7 @@ object WorkshopContentPartitioner extends App {
   }
 
   // Create all the gma's and upload them
-  def publishWorkshopAddons(originalManifest: WorkshopManifest, updatedManifest: List[ManifestAddonEntry]): IO[Unit] = IO {
+  def publishWorkshopAddons(originalManifest: WorkshopManifest, updatedManifest: List[ManifestAddonEntry]): IO[Unit] = {
     val originalManifestMap = originalManifest.addons.groupBy(_.partitionNumber).mapValues(_.head)
     updatedManifest.foldLeft(IO(originalManifestMap)) { (committedManifestChanges, updatedManifestEntry) =>
 
@@ -163,7 +163,7 @@ object WorkshopContentPartitioner extends App {
           _ <- FileUtil.writeManifest(manifestFile, WorkshopManifest(newManifest.values.toList))
         ) yield newManifest
       }
-    }
+    }.map(_ => ())
   }
 
   // Checks the new files to make sure they match the whitelisted patterns and filters out any ignored files
